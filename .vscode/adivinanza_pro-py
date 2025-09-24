@@ -1,0 +1,177 @@
+# -*- coding: utf-8 -*-
+import json
+import os
+import random
+import time
+
+SCORES_FILE = "scores.json"
+
+DIFFICULTIES = {
+    "1": {"name": "Fácil",   "min": 1,   "max": 20,   "attempts": 8},
+    "2": {"name": "Normal",  "min": 1,   "max": 50,   "attempts": 7},
+    "3": {"name": "Difícil", "min": 1,   "max": 100,  "attempts": 7},
+    "4": {"name": "Extremo", "min": 1,   "max": 500,  "attempts": 9},
+}
+
+def clear():
+    # Limpia pantalla (simple)
+    os.system("clear" if os.name == "posix" else "cls")
+
+def pause(msg="Pulsa Enter para continuar..."):
+    input(msg)
+
+def load_scores():
+    if not os.path.exists(SCORES_FILE):
+        return []
+    try:
+        with open(SCORES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+def save_scores(scores):
+    try:
+        with open(SCORES_FILE, "w", encoding="utf-8") as f:
+            json.dump(scores, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[!] No se pudo guardar la tabla de récords: {e}")
+
+def show_scores(scores, top=10):
+    if not scores:
+        print("\n📄 Aún no hay récords. ¡Sé la primera en lograr uno! 🏆")
+        return
+    print("\n🏆 TOP récords")
+    print("-" * 40)
+    # Ordenar por puntos descendente
+    ordered = sorted(scores, key=lambda s: s["score"], reverse=True)[:top]
+    for i, s in enumerate(ordered, 1):
+        print(f"{i:2d}. {s['player']:<15} — {s['difficulty']:<8} — {s['score']} pts  — {s['attempts']} intentos")
+    print("-" * 40)
+
+def hot_cold_hint(secret, guess):
+    diff = abs(secret - guess)
+    if diff == 0:
+        return "¡Exacto!"
+    if diff <= 2:
+        return "🔥 Muy caliente"
+    if diff <= 5:
+        return "🔥 Caliente"
+    if diff <= 10:
+        return "🌶️ Tibio"
+    if diff <= 20:
+        return "❄️ Frío"
+    return "🧊 Muy frío"
+
+def calc_score(difficulty_key, attempts_used, time_secs):
+    # Puntuación simple: base por dificultad + bonus por rapidez + bonus por intentos sobrantes
+    base = {"1": 100, "2": 200, "3": 350, "4": 600}[difficulty_key]
+    speed_bonus = max(0, int(120 - time_secs))  # hasta 120 seg de bonus
+    leftover_bonus = max(0, 10 - attempts_used) * 10
+    return max(1, base + speed_bonus + leftover_bonus)
+
+def pick_difficulty():
+    clear()
+    print("🧩 Adivinanza Pro — Selecciona dificultad\n")
+    for k, d in DIFFICULTIES.items():
+        print(f"{k}) {d['name']:8} | Rango {d['min']}-{d['max']} | Intentos: {d['attempts']}")
+    print("0) Volver")
+    while True:
+        choice = input("\nElige una opción: ").strip()
+        if choice == "0":
+            return None
+        if choice in DIFFICULTIES:
+            return choice
+        print("Opción no válida. Intenta de nuevo.")
+
+def play_round(player_name, difficulty_key, scores):
+    dcfg = DIFFICULTIES[difficulty_key]
+    low, high, tries = dcfg["min"], dcfg["max"], dcfg["attempts"]
+    secret = random.randint(low, high)
+    attempts = 0
+    start = time.time()
+
+    clear()
+    print(f"🎯 {player_name}, estoy pensando en un número entre {low} y {high}.")
+    print(f"Tienes {tries} intentos. ¡Mucha suerte!\n")
+
+    while attempts < tries:
+        raw = input(f"Intento {attempts+1}/{tries} → Escribe un número: ").strip()
+        try:
+            guess = int(raw)
+        except ValueError:
+            print("Por favor, escribe un número válido.\n")
+            continue
+
+        if not (low <= guess <= high):
+            print(f"Debe estar entre {low} y {high}.\n")
+            continue
+
+        attempts += 1
+
+        if guess == secret:
+            elapsed = time.time() - start
+            score = calc_score(difficulty_key, attempts, elapsed)
+            print(f"\n🎉 ¡Correcto! El número era {secret}.")
+            print(f"⏱️ Tiempo: {elapsed:.1f}s   🧮 Intentos usados: {attempts}   ⭐ Puntuación: {score}\n")
+
+            scores.append({
+                "player": player_name,
+                "difficulty": DIFFICULTIES[difficulty_key]["name"],
+                "score": score,
+                "attempts": attempts,
+            })
+            save_scores(scores)
+            return True
+
+        # Pistas
+        arrow = "⬆️ más grande" if guess < secret else "⬇️ más pequeño"
+        temp = hot_cold_hint(secret, guess)
+        print(f"{arrow} | {temp}\n")
+
+    print(f"\n💥 Te quedaste sin intentos. El número era {secret}. ¡A la próxima!")
+    return False
+
+def main_menu():
+    scores = load_scores()
+    player_name = ""
+
+    while True:
+        clear()
+        print("🎮 ADIVINANZA PRO")
+        print("-----------------")
+        print("1) Jugar")
+        print("2) Ver récords")
+        print("3) Cambiar nombre de jugador")
+        print("4) Créditos")
+        print("0) Salir")
+        choice = input("\nElige una opción: ").strip()
+
+        if choice == "1":
+            if not player_name:
+                player_name = input("Escribe tu nombre de jugadora: ").strip() or "Lulu"
+            diff = pick_difficulty()
+            if diff is None:
+                continue
+            play_round(player_name, diff, scores)
+            pause()
+        elif choice == "2":
+            clear()
+            show_scores(scores)
+            pause()
+        elif choice == "3":
+            player_name = input("Nuevo nombre: ").strip() or "Lulu"
+            print(f"✔️ Nombre establecido como: {player_name}")
+            pause()
+        elif choice == "4":
+            clear()
+            print("Hecho con 🐍 Python y ❤️ por Lulu.\n¡Listo para GitHub!")
+            pause()
+        elif choice == "0":
+            print("\n¡Hasta luego! 👋")
+            break
+        else:
+            print("Opción no válida.")
+            pause()
+
+if __name__ == "__main__":
+    main_menu()
